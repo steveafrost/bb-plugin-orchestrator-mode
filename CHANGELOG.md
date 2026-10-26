@@ -6,6 +6,19 @@ All notable changes to Orchestrator Mode are documented here. The format follows
 
 ## Unreleased
 
+## 0.1.5 - 2026-10-26
+
+### Fixed
+
+- Build from a Git install again. `app.tsx` imported runtime constants from
+  `server.ts`, so the frontend bundle pulled in `server.ts` and its
+  `@get-bb/plugin-sdk` import. Git installs run `npm install --omit=dev` and the
+  SDK is a devDependency, so `bb plugin build` failed with
+  `server.ts:26:7: ERROR: Could not resolve "@get-bb/plugin-sdk"`. The constants
+  now live in `shared.ts` and `app.tsx` imports only types from `./server`.
+  Fix authored upstream by @frankmanno in PR #13; this release tags it so the
+  marketplace `semver:^0.1.x` install path works.
+
 ## 0.1.4 - 2026-10-18
 
 ### Fixed
