@@ -105,6 +105,15 @@ async function click(element: Element): Promise<void> {
   await flush();
 }
 
+/** The disclosure header of the thread strip, whatever its folded state. */
+function stripSummary(slot: RenderedSlot): HTMLElement {
+  return within(slot.container).getByText("Orchestrator mode is on");
+}
+
+function stripDetails(slot: RenderedSlot): HTMLDetailsElement {
+  return within(slot.container).getByTestId("orch-strip-thread") as HTMLDetailsElement;
+}
+
 function threadOptions() {
   return {
     composer: { scope: { kind: "thread" as const, threadId: THREAD }, text: "do the thing" },
@@ -213,6 +222,8 @@ describe("thread composer", () => {
     expect(within(host.container).getByText(/Orchestrator mode is on/)).toBeTruthy();
     expect(host.inspection.composer.textEffect).toBeNull();
 
+    // Turn off lives inside the folded panel now, so open it first.
+    await click(stripSummary(host));
     await click(within(host.container).getByText("Turn off"));
 
     expect(within(host.container).queryByText(/Orchestrator mode is on/)).toBeNull();
@@ -238,12 +249,115 @@ describe("thread composer", () => {
     });
     const host = mount(Host, rpc, threadOptions());
     await flush();
+    await click(stripSummary(host));
     const strip = within(host.container);
 
     expect(strip.getByText(/Direct work caught \(1 total\)/)).toBeTruthy();
     expect(strip.getByText(/changed src\/server.ts itself/)).toBeTruthy();
-    expect(strip.getByText(/· block/)).toBeTruthy();
+    expect(strip.getByText(/^block$/)).toBeTruthy();
     expect(host.container.querySelector('[data-violations="true"]')).not.toBeNull();
+  });
+
+  it("renders the strip folded even while the watchdog has caught work", async () => {
+    const rpc = makeRpc({
+      enabled: true,
+      effectiveEnforcement: "block",
+      violations: [
+        {
+          id: "row_1",
+          turnId: "turn_1",
+          workKind: "file-change",
+          detail: "changed src/server.ts itself",
+          detectedAt: Date.now(),
+        },
+      ],
+    });
+    const host = mount(Host, rpc, threadOptions());
+    await flush();
+
+    expect(stripDetails(host).open).toBe(false);
+    expect(stripDetails(host).getAttribute("data-violations")).toBe("true");
+    // Folded means folded: the enforcement line and the caught work stay shut in.
+    expect(within(host.container).getByText(/Direct work caught/).closest("details")!.open).toBe(
+      false,
+    );
+  });
+
+  it("reads exactly one compact line while folded", async () => {
+    const rpc = makeRpc({ enabled: true, effectiveEnforcement: "block" });
+    const host = mount(Host, rpc, threadOptions());
+    await flush();
+
+    // The folded strip renders one line of text: the label and nothing else. The
+    // assertions below hold in the DOM even folded, so check the summary itself.
+    const summary = stripDetails(host).querySelector("summary")!;
+    expect(summary.textContent).toBe("Orchestrator mode is on");
+    expect(summary.textContent).not.toContain("block");
+
+    const details = stripDetails(host);
+    expect(details.open).toBe(false);
+    expect(details.querySelector("summary")!.textContent).toBe("Orchestrator mode is on");
+  });
+
+  it("expands to the enforcement level, its description and the Turn off button", async () => {
+    const rpc = makeRpc({ enabled: true, effectiveEnforcement: "block" });
+    const host = mount(Host, rpc, threadOptions());
+    await flush();
+
+    await click(stripSummary(host));
+
+    expect(stripDetails(host).open).toBe(true);
+    const strip = within(host.container);
+    expect(strip.getByText(/^block$/)).toBeTruthy();
+    expect(strip.getByText(/Block writes the rules too/)).toBeTruthy();
+    expect(strip.getByRole("button", { name: "Turn off" })).toBeTruthy();
+  });
+
+  it("names the disclosure and labels the panel it opens", async () => {
+    const rpc = makeRpc({ enabled: true, effectiveEnforcement: "guard" });
+    const host = mount(Host, rpc, threadOptions());
+    await flush();
+
+    const summary = stripDetails(host).querySelector("summary")!;
+    expect(summary.getAttribute("aria-label")).toMatch(/orchestrator mode details/i);
+    expect(stripDetails(host).querySelector("summary")!.tagName).toBe("SUMMARY");
+    expect(
+      within(host.container).getByRole("group", { name: "Orchestrator mode details" }),
+    ).toBeTruthy();
+  });
+
+  it("turns the mode off from the folded strip without toggling the disclosure", async () => {
+    const rpc = makeRpc({ enabled: true });
+    const host = mount(Host, rpc, threadOptions());
+    await flush();
+    await click(stripSummary(host));
+
+    // Hold the node: the strip unmounts on disable, so this is the only handle
+    // left on the disclosure once the click has landed.
+    const details = stripDetails(host);
+    expect(details.open).toBe(true);
+
+    const off = within(host.container).getByRole("button", { name: "Turn off" });
+
+    // The button belongs to the panel, not the header: a click on a descendant of
+    // <summary> runs the summary activation behaviour, so keeping it out of there
+    // is what makes pressing it independent of the disclosure. A <button> carries
+    // its own activation behaviour and preempts the summary's, which is why the
+    // open-state check below cannot see a move on its own -- this can.
+    expect(off.closest("summary")).toBeNull();
+    expect(details.querySelector("summary")!.contains(off)).toBe(false);
+
+    await click(off);
+
+    // The disclosure stayed open across the click. `open` is attribute-backed, so
+    // it is still readable after the strip has unmounted on disable.
+    expect(details.open).toBe(true);
+
+    expect(rpc.calls.filter((call) => call.method === "set_enabled")).toEqual([
+      { method: "set_enabled", input: { threadId: THREAD, enabled: false } },
+    ]);
+    expect(rpc.state.enabled).toBe(false);
+    expect(within(host.container).queryByTestId("orch-strip-thread")).toBeNull();
   });
 
   it("refetches when the backend publishes a state change", async () => {
@@ -309,6 +423,20 @@ describe("new-thread composer", () => {
     expect(host.inspection.composer.textEffect).toBeNull();
     expect(host.inspection.composer.textEffectCalls).toEqual([]);
     expect(host.inspection.composer.text).toBe(options.composer.text);
+  });
+
+  it("keeps the new-thread strip inline instead of folding it", async () => {
+    const rpc = makeRpc({ defaultForNewThreads: true });
+    const host = mount(Host, rpc, composeOptions());
+    await flush();
+    const strip = within(host.container);
+
+    // The new-thread branch is untouched: a plain row, always readable, with its
+    // own Turn off button in the row rather than behind a disclosure.
+    expect(strip.getByTestId("orch-strip-new-thread").tagName).toBe("DIV");
+    expect(host.container.querySelector("details")).toBeNull();
+    expect(strip.getByText(/The thread you are about to create will delegate/)).toBeTruthy();
+    expect(strip.getByText("Turn off")).toBeTruthy();
   });
 
   it("toggles the plugin-wide default instead of a thread", async () => {

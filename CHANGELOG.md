@@ -6,6 +6,23 @@ All notable changes to Orchestrator Mode are documented here. The format follows
 
 ## Unreleased
 
+## 0.1.6 - 2026-10-26
+
+### Changed
+
+- Fold the composer strip that reports orchestrator mode into a native
+  `<details>` disclosure, collapsed by default instead of an always-expanded
+  row. Folded, it shows the single line "Orchestrator mode is on"; expanding
+  reveals the enforcement level, its description, the "Direct work caught
+  (N total)" list and the "Turn off" button. Presentation only: no server,
+  contract or enforcement behaviour changed.
+
+### Fixed
+
+- Give the new-thread strip's "Turn off" button `type="button"` so it cannot
+  submit the composer. Presentation only: no server, contract or enforcement
+  behaviour changed.
+
 ## 0.1.5 - 2026-10-26
 
 ### Fixed

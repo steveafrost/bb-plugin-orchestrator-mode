@@ -214,6 +214,7 @@ function OrchestratorHost() {
           </div>
         </div>
         <Button
+          type="button"
           variant="ghost"
           size="sm"
           className="h-7 shrink-0 px-2 text-xs"
@@ -229,17 +230,27 @@ function OrchestratorHost() {
   const enforcement = state?.effectiveEnforcement ?? "guard";
   const violations = state?.violations ?? [];
   const recent = violations.slice(-3);
+  // Folded shut by default, violations or not: the strip is a mode indicator, not
+  // a report. <details> gives the disclosure keyboard and screen-reader semantics
+  // for free, so nothing here toggles by hand.
   return (
-    <div
-      className="orch-strip"
+    <details
+      className="orch-strip orch-strip--folded"
       data-violations={violations.length > 0 ? "true" : "false"}
       data-testid="orch-strip-thread"
     >
-      <Icon name={ICON_NAME} className="mt-0.5 size-4 shrink-0" />
-      <div className="orch-strip__body">
-        <div className="orch-strip__title">
-          Orchestrator mode is on
-          <span className="font-normal opacity-70">· {enforcement}</span>
+      <summary
+        className="orch-strip__summary"
+        aria-label={`Orchestrator mode is on. Show or hide orchestrator mode details (${enforcement} enforcement).`}
+      >
+        <Icon name={ICON_NAME} className="orch-strip__glyph size-4 shrink-0" />
+        <span className="orch-strip__title">Orchestrator mode is on</span>
+        <span className="orch-strip__chevron" aria-hidden="true" />
+      </summary>
+      <div className="orch-strip__body" role="group" aria-label="Orchestrator mode details">
+        <div className="orch-strip__level">
+          <span className="font-medium">{enforcement}</span>
+          <span className="opacity-70"> enforcement</span>
         </div>
         <div className="orch-strip__detail">
           {ENFORCEMENT_DESCRIPTIONS[enforcement]} This thread may only read, plan, ask,
@@ -257,17 +268,18 @@ function OrchestratorHost() {
             ))}
           </div>
         )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="orch-strip__off h-7 shrink-0 px-2 text-xs"
+          disabled={busy}
+          onClick={() => void applyEnabled(false)}
+        >
+          Turn off
+        </Button>
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 shrink-0 px-2 text-xs"
-        disabled={busy}
-        onClick={() => void applyEnabled(false)}
-      >
-        Turn off
-      </Button>
-    </div>
+    </details>
   );
 }
 
